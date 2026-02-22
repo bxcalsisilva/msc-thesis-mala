@@ -1,0 +1,61 @@
+# --- CARPETAS DE SALIDA (Solo estructura, no archivos) ---
+# Ignora todo el contenido de la carpeta output y sus subcarpetas
+output/**
+
+# --- EXCEPCIONES PARA MANTENER CARPETAS VACÍAS ---
+# Esto permite subir el archivo .gitkeep para que la carpeta exista en GitHub/GitLab
+!.gitkeep
+
+# --- Sistema y RStudio ---
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.DS_Store
+Thumbs.db
+
+# --- Archivos de Workspace de R (Peligrosos y Pesados) ---
+# Bloqueamos el guardado automático de todo el entorno
+*.RData
+*.Rda
+
+# --- CARPETAS DE SALIDA PESADA (Cadenas MCMC) ---
+# Todo lo que guardes en estas carpetas será ignorado por Git
+output/chains/
+temp/
+cache/
+
+# Ignorar PDFs o HTMLs temporales (opcional, si prefieres generarlos de nuevo)
+*.pdf
+*.html
+
+# --- Lo que SÍ queremos subir (Excepciones) ---
+# Queremos mantener la estructura de carpetas aunque estén vacías
+!output/chains/.gitkeep
+
+# --- ARCHIVOS ESPECÍFICOS DE MODELADO ---
+# A veces Stan/JAGS generan binarios o ejecutables temporales
+*.rds
+
+# --- COMPILADOS C++ (Para Stan/RTMB) ---
+# Al compilar, se crean archivos .o, .so, .dll que no necesitas subir
+*.o
+*.so
+*.dll
+*.exe
+
+# --- LO QUE SIEMPRE QUEREMOS (Seguridad Extra) ---
+# Esto asegura que nunca ignores tus scripts ni modelos por error
+!*.R
+!*.Rmd
+!*.stan
+!*.jags
+!*.txt
+
+# 2. Permitir CSVs de forma general (como los de la carpeta data/)
+!*.csv
+
+# 3. BLOQUEO ESPECÍFICO (Esta regla gana por estar al final)
+# Bloquea cualquier CSV que esté dentro de output o sus subcarpetas
+output/**/*.csv
+output/*.csv

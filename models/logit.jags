@@ -1,0 +1,14 @@
+model {
+  # Verosimilitud
+  for (i in 1:N) {
+    y[i] ~ dbern(p[i])
+    logit(p[i]) <- inprod(X[i, ], beta[]) 
+  }
+
+  # Priors
+  for (j in 1:P) {
+    beta[j] ~ dnorm(0, tau_prior)
+  }
+
+  tau_prior <- 1 / (sigma * sigma)
+}

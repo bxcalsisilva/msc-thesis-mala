@@ -1,0 +1,31 @@
+model {
+  # --- Likelihood ---
+  for (i in 1:N) {
+    # 1. Linear Predictor
+    eta[i] <- inprod(X[i, ], beta[])
+
+    # 2. Standard Logit Probability
+    # Paper eq (1): L(z) = 1 / (1 + exp(-z))
+    p_base[i] <- ilogit(eta[i]) 
+    
+    # 3. Power Link Transformation
+    # Paper Table I: Power Logit = L(z)^lambda
+    # lambda < 1: Asimetría positiva (cola derecha más pesada/crecimiento rápido)
+    # lambda > 1: Asimetría negativa (crecimiento lento inicial)
+    p[i] <- pow(p_base[i], lambda)
+    
+    # 4. Observation
+    y[i] ~ dbern(p[i])
+  }
+
+  # --- Priors ---
+  for (j in 1:P) {
+    beta[j] ~ dnorm(0, tau_prior)
+  }
+  
+  # Prior for Lambda (Shape Parameter)
+  # Paper Section 4: delta = log(lambda) ~ N(0,1) implies lambda ~ LogNormal(0,1)
+  lambda ~ dlnorm(0, 1.0)
+
+  tau_prior <- 1 / (sigma * sigma)
+}
