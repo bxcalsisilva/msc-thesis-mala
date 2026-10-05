@@ -32,14 +32,26 @@ worker_mala_shill_power <- function(seed, data_list, params) {
   f_model <- function(theta) {
     p <- data_list$p_beta
     beta <- theta[1:p]; lambda <- exp(theta[p + 1])
-    log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) + 
-      dnorm(theta[p+1], 0, sqrt(data_list$sigma2_delta), log = TRUE)
+    
+    # Anterior log-prior: Normal para los betas + Normal para log(lambda)
+    # log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) + 
+    #   dnorm(theta[p+1], 0, sqrt(data_list$sigma2_delta), log = TRUE)
+    
+    # Nuevo log-prior: Normal para los betas + Uniforme(-2, 2) para log(lambda)
+    # log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) + 
+    #   dunif(theta[p+1], min = -2, max = 2, log = TRUE)
+    log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) - log(4)
+    
     # power logit link
     p_power <- plogis(data_list$X %*% beta) ^ lambda
     log_lik <- sum(dbinom(data_list$y, size = 1, prob = p_power, log = TRUE))
     return(log_priors + log_lik)
   }
-  run_adaptive_mala_loop(f_model, c(rep(0, data_list$p_beta), 0), params)
+  # Definir límites: -Inf a Inf para los betas, -2 a 2 para log(lambda)
+  lower_b <- c(rep(-Inf, data_list$p_beta), -2)
+  upper_b <- c(rep(Inf, data_list$p_beta), 2)
+  
+  run_adaptive_mala_loop(f_model, c(rep(0, data_list$p_beta), 0), params, lower = lower_b, upper = upper_b)
 }
 
 worker_mala_shill_reversal <- function(seed, data_list, params) {
@@ -47,28 +59,50 @@ worker_mala_shill_reversal <- function(seed, data_list, params) {
   f_model <- function(theta) {
     p <- data_list$p_beta
     beta <- theta[1:p]; lambda <- exp(theta[p + 1])
-    log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) + 
-      dnorm(theta[p+1], 0, sqrt(data_list$sigma2_delta), log = TRUE)
+    
+    # log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) + 
+    #   dnorm(theta[p+1], 0, sqrt(data_list$sigma2_delta), log = TRUE)
+    
+    # Nuevo log-prior: Normal para los betas + Uniforme(-2, 2) para log(lambda)
+    # log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) + 
+    #   dunif(theta[p+1], min = -2, max = 2, log = TRUE)
+    log_priors <- sum(dnorm(beta, 0, sqrt(data_list$sigma2_beta), log = TRUE)) - log(4)
+    
     # reversal power logit link
     p_rev <- 1 - (plogis(-(data_list$X %*% beta)) ^ lambda)
     log_lik <- sum(dbinom(data_list$y, size = 1, prob = p_rev, log = TRUE))
     return(log_priors + log_lik)
   }
-  run_adaptive_mala_loop(f_model, c(rep(0, data_list$p_beta), 0), params)
+  
+  # Definir límites: -Inf a Inf para los betas, -2 a 2 para log(lambda)
+  lower_b <- c(rep(-Inf, data_list$p_beta), -2)
+  upper_b <- c(rep(Inf, data_list$p_beta), 2)
+  
+  run_adaptive_mala_loop(f_model, c(rep(0, data_list$p_beta), 0), params, lower = lower_b, upper = upper_b)
 }
 
 # ==============================================================================
 # 2. MOTOR MALA (Loop Adaptativo)
 # ==============================================================================
 
-run_adaptive_mala_loop <- function(f_model, theta_init, params) {
+run_adaptive_mala_loop <- function(f_model, theta_init, params, lower = NULL, upper = NULL) {
   # Crear cinta AD en el nodo local
   obj <- MakeADFun(f_model, theta_init, silent = TRUE)
   get_info <- function(th) list(lp=obj$fn(th), grad=obj$gr(th))
   
   n_total <- params$n_iter; n_warmup <- params$n_warmup; eps <- params$eps_init
+  
+  # Version original
   current_theta <- theta_init + rnorm(length(theta_init), 0, 0.05)
   info_curr <- get_info(current_theta)
+  
+  # Version nueva con la priori de log lambda
+  # p_betas <- length(theta_init)
+  # betas_init <- theta_init[1:p_betas] + rnorm(p_betas, 0, 0.05)
+  # lambda_init <- runif(1, min = -2, max = 2) 
+  # current_theta <- c(betas_init, lambda_init)
+  # info_curr <- get_info(current_theta)
+  
   draws <- matrix(NA, n_total, length(theta_init))
   accepted <- logical(n_total)
   
@@ -76,12 +110,24 @@ run_adaptive_mala_loop <- function(f_model, theta_init, params) {
     z <- rnorm(length(theta_init))
     mu_curr <- current_theta + eps * info_curr$grad
     prop_theta <- mu_curr + sqrt(2*eps)*z
-    info_prop <- get_info(prop_theta)
-    mu_prop <- prop_theta + eps * info_prop$grad
     
-    log_ratio <- (info_prop$lp - info_curr$lp) + 
-      (sum(dnorm(current_theta, mu_prop, sqrt(2*eps), log=TRUE)) - 
-         sum(dnorm(prop_theta, mu_curr, sqrt(2*eps), log=TRUE)))
+    # Verificacion de limites antes de evaluar RTMB
+    out_of_bounds <- FALSE
+    if (!is.null(lower) && any(prop_theta < lower)) out_of_bounds <- TRUE
+    if (!is.null(upper) && any(prop_theta > upper)) out_of_bounds <- TRUE
+    
+    if (out_of_bounds) {
+      # Si MALA propone un log(lambda) fuera de [-2, 2], lo rechazamos instantáneamente
+      acc <- FALSE
+      log_ratio <- -Inf
+    } else {
+      info_prop <- get_info(prop_theta)
+      mu_prop <- prop_theta + eps * info_prop$grad
+      
+      log_ratio <- (info_prop$lp - info_curr$lp) + 
+        (sum(dnorm(current_theta, mu_prop, sqrt(2*eps), log=TRUE)) - 
+           sum(dnorm(prop_theta, mu_curr, sqrt(2*eps), log=TRUE)))
+    }
     
     acc <- FALSE
     if (is.finite(log_ratio) && log(runif(1)) < log_ratio) {
