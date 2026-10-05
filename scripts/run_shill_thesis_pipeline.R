@@ -11,7 +11,8 @@ source(here("R", "mala_driver_shill.R"))
 cat("Cargando datos shill bidding...\n")
 raw_data <- read.csv(here("data", "Data_shillB.csv"))
 
-X_raw    <- raw_data[, 4:12]
+# X_raw    <- raw_data[, 4:12]
+X_raw <- raw_data[, c("Bidder_Tendency", "Successive_Outbidding", "Winning_Ratio", "Auction_Duration")]
 y        <- raw_data$Class
 X_scaled <- scale(X_raw)
 X_matrix <- cbind(Intercepto = 1, X_scaled)
